@@ -1,0 +1,156 @@
+import os
+import tkinter as tk
+from tkinter import messagebox
+from openai import AzureOpenAI
+
+# Azure configuration
+endpoint = os.getenv("ENDPOINT_URL", "https://openai-ailiterate.openai.azure.com/")
+deployment = os.getenv("DEPLOYMENT_NAME", "AIliterateGPT-4o")
+search_endpoint = os.getenv("SEARCH_ENDPOINT", "https://searchailiterate.search.windows.net")
+search_key = os.getenv("SEARCH_KEY", "put your Azure AI Search admin key here")
+search_index = os.getenv("SEARCH_INDEX_NAME","ailiterate-index")
+subscription_key = os.getenv("AZURE_OPENAI_API_KEY", "875d081ef3724a779897e10316f078c8")
+
+# Initialize Azure OpenAI client
+client = AzureOpenAI(
+    azure_endpoint=endpoint,
+    api_key=subscription_key,
+    api_version="2024-05-01-preview",
+)
+
+# Function to create a summary using Azure OpenAI
+def create_summary(data):
+    completion = client.chat.completions.create(
+        model=deployment,
+        messages=[
+            {
+                "role": "system",
+                "content": "Act as an information generator. You will be acquiring information and generate a report based on the template given."
+            },
+            {
+                "role": "user",
+                "content": "\n".join(data)  # Join user inputs into a single message
+            }
+        ],
+        max_tokens=800,
+        temperature=0.7,
+        top_p=0.95,
+        frequency_penalty=0,
+        presence_penalty=0
+    )
+    return completion.to_json()  # Return the JSON response
+
+# Page 1 - User Information
+class UserInfoPage(tk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.create_widgets()
+
+    def create_widgets(self):
+        tk.Label(self, text="Informate", font=("Helvetica", 16)).pack(pady=10)
+
+        self.name_entry = self.create_entry("Name:")
+        self.company_entry = self.create_entry("Company:")
+        self.cost_cluster_entry = self.create_entry("Cost Cluster:")
+        self.registered_year_entry = self.create_entry("Registered Year:")
+
+        tk.Button(self, text="Next", command=self.next_page).pack(pady=10)
+
+    def create_entry(self, label):
+        tk.Label(self, text=label).pack()
+        entry = tk.Entry(self)
+        entry.pack(pady=5)
+        return entry
+
+    def next_page(self):
+        if not self.validate_entries():
+            messagebox.showerror("Error", "All fields are mandatory.")
+            return
+
+        user_data = [
+            f"Name: {self.name_entry.get()}",
+            f"Company: {self.company_entry.get()}",
+            f"Cost Cluster: {self.cost_cluster_entry.get()}",
+            f"Registered Year: {self.registered_year_entry.get()}"
+        ]
+        # Switch to the project entry page, passing the user data
+        self.master.switch_frame(ProjectEntryPage, user_data)
+
+    def validate_entries(self):
+        return all(entry.get() for entry in [self.name_entry, self.company_entry, self.cost_cluster_entry, self.registered_year_entry])
+
+# Page 2 - Project Entry
+class ProjectEntryPage(tk.Frame):
+    def __init__(self, parent, user_data):
+        super().__init__(parent)
+        self.user_data = user_data
+        self.create_widgets()
+
+    def create_widgets(self):
+        tk.Label(self, text="Project Entry", font=("Helvetica", 16)).pack(pady=10)
+
+        self.project_questions = [
+            "What is your project all about?",
+            "Why is this project important?",
+            "Who is involved in this project?",
+            "Where does this project take place? Please specify the area being improved.",
+            "How do you carry out the project?",
+            "How do you calculate the savings?",
+            "How much is your savings?"
+        ]
+
+        self.answers = []
+        for question in self.project_questions:
+            tk.Label(self, text=question).pack(pady=5)
+            answer_entry = tk.Entry(self)
+            answer_entry.pack(pady=5)
+            self.answers.append(answer_entry)
+
+        tk.Button(self, text="Submit", command=self.submit_data).pack(pady=10)
+        tk.Button(self, text="Back", command=self.back_page).pack(pady=5)
+
+    def submit_data(self):
+        project_data = [entry.get() for entry in self.answers]
+        if not all(project_data):
+            messagebox.showerror("Error", "All project questions are mandatory.")
+            return
+
+        # Combine user data and project data
+        full_data = self.user_data + project_data
+        summary = create_summary(full_data)
+        messagebox.showinfo("Summary", summary)  # Display summary in a popup
+
+    def back_page(self):
+        self.master.switch_frame(UserInfoPage)
+
+# Main Application
+class Application(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Project Management App")
+        self.geometry("400x500")
+        self.frames = {}
+
+        # Create frames for each page
+        for F in (UserInfoPage, ProjectEntryPage):
+            page_name = F.__name__
+            if page_name == "ProjectEntryPage":
+                # Initialize with a placeholder for user_data
+                frame = F(self, user_data=[])
+            else:
+                frame = F(self)
+            self.frames[page_name] = frame
+            frame.grid(row=0, column=0, sticky="nsew")
+
+        self.switch_frame(UserInfoPage)
+
+    def switch_frame(self, frame_class, *args):
+        frame_name = frame_class.__name__
+        frame = self.frames[frame_name]
+        if frame_class == ProjectEntryPage:
+            frame.user_data = args[0]  # Pass user_data to ProjectEntryPage
+        frame.tkraise()
+
+if __name__ == "__main__":
+    app = Application()
+    app.mainloop()
